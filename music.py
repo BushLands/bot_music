@@ -6,7 +6,10 @@ import config
 from player import *
 
 class Music(commands.Cog):
-
+    '''
+    This code is made from this one: https://gist.github.com/vbe0201/ade9b80f2d3b64643d854938d40a0a2d
+    Chech it out, amazing stuff!
+    '''
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.voice_states = {}
@@ -35,7 +38,9 @@ class Music(commands.Cog):
     async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError):
         await ctx.send('An error occurred: {}'.format(str(error)))
 
-    @commands.command(name='join', invoke_without_subcommand=True)
+    @commands.command(name='join', 
+        aliases = ['запрыгивай', 'залетай'],
+        invoke_without_subcommand=True)
     async def _join(self, ctx: commands.Context):
         """Joins a voice channel."""
 
@@ -64,7 +69,8 @@ class Music(commands.Cog):
 
         ctx.voice_state.voice = await destination.connect()
 
-    @commands.command(name='leave', aliases=['disconnect'])
+    @commands.command(name='leave', 
+        aliases=['выйди', 'свали', 'исчезни'])
     @commands.has_permissions(manage_guild=True)
     async def _leave(self, ctx: commands.Context):
         """Clears the queue and leaves the voice channel."""
@@ -75,7 +81,8 @@ class Music(commands.Cog):
         await ctx.voice_state.stop()
         del self.voice_states[ctx.guild.id]
 
-    @commands.command(name='play')
+    @commands.command(name='play',
+        aliases=['бахни', 'сваргань', 'проиграй', 'сыграй'])
     async def _play(self, ctx: commands.Context, *, line: str):
         """Plays a song.
 
@@ -89,8 +96,10 @@ class Music(commands.Cog):
         if not ctx.voice_state.voice:
             await ctx.invoke(self._join)
 
-        if line == 'something':
-                line = config.RICKROLL
+        try:
+            line = config.PLAYLIST[line]
+        except KeyError:
+            pass
 
         async with ctx.typing():
             # create AudoiSource object
@@ -119,7 +128,7 @@ class Music(commands.Cog):
             await ctx.message.clear_reaction('▶️')
             await ctx.message.add_reaction('⏸️')
 
-    @commands.command(name='pause')
+    @commands.command(name='pause', aliases=['тормозни', 'пауза', 'заткнись'])
     @commands.has_permissions(manage_guild=True)
     async def _pause(self, ctx: commands.Context):
         """Pauses the currently playing song."""
