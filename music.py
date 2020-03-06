@@ -75,19 +75,6 @@ class Music(commands.Cog):
         await ctx.voice_state.stop()
         del self.voice_states[ctx.guild.id]
 
-    @commands.command(name='volume')
-    async def _volume(self, ctx: commands.Context, *, volume: int):
-        """Sets the volume of the player."""
-
-        if not ctx.voice_state.is_playing:
-            return await ctx.send('Nothing being played at the moment.')
-
-        if 0 > volume > 100:
-            return await ctx.send('Volume must be between 0 and 100')
-
-        ctx.voice_state.volume = volume / 100
-        await ctx.send('Volume of the player set to {}%'.format(volume))
-
     @commands.command(name='play')
     async def _play(self, ctx: commands.Context, *, line: str):
         """Plays a song.
@@ -98,26 +85,40 @@ class Music(commands.Cog):
         -- something - will play Rick Ashley's song
 
         """
-        async with ctx.typing():
 
-            if line == 'something':
+        if not ctx.voice_state.voice:
+            await ctx.invoke(self._join)
+
+        if line == 'something':
                 line = config.RICKROLL
-            
+
+        async with ctx.typing():
+            # create AudoiSource object
             try:
                 source = await YTDLSource.create_source(ctx, line, loop=self.bot.loop)
             except YTDLError as e:
-                await ctx.send('An error occurred while processing this request: {}'.format(str(e)))
-            
-            ctx.voice_state.voice.play(source)
+                await print('An error occurred while processing this request: {}'.format(str(e)))
+            else:
+                ctx.voice_state.voice.play(source)
 
-            self.player_ctx = ctx
+                self.playerMsgId = ctx.message.id # save for further usage
 
-            try:
-                await ctx.message.add_reaction('⏸️')
+                # add reactions for control
                 await ctx.message.add_reaction('⏹️')
-            except Exception as e:
-                print(repr(e))
-        
+                await ctx.message.add_reaction('⏸️')
+
+    @commands.command(name='resume')
+    @commands.has_permissions(manage_guild=True)
+    async def _resume(self, ctx: commands.Context):
+        """Resumes a currently paused song."""
+
+        if not ctx.voice_state.is_playing and ctx.voice_state.voice.is_paused():
+            ctx.voice_state.voice.resume()
+
+            # add control reactions
+            await ctx.message.clear_reaction('▶️')
+            await ctx.message.add_reaction('⏸️')
+
     @commands.command(name='pause')
     @commands.has_permissions(manage_guild=True)
     async def _pause(self, ctx: commands.Context):
@@ -126,11 +127,9 @@ class Music(commands.Cog):
         if not ctx.voice_state.is_playing and ctx.voice_state.voice.is_playing():
             ctx.voice_state.voice.pause()
 
-            try:
-                await self.player_ctx.message.clear_reaction('⏸️')
-                await self.player_ctx.message.add_reaction('▶️')
-            except Exception as e:
-                print(repr(e))
+            # add control reactions
+            await ctx.message.clear_reaction('⏸️')
+            await ctx.message.add_reaction('▶️')
 
     @commands.command(name='stop')
     @commands.has_permissions(manage_guild=True)
@@ -142,20 +141,29 @@ class Music(commands.Cog):
         if not ctx.voice_state.is_playing:
             ctx.voice_state.voice.stop()
 
-            try:
-                await self.player_ctx.message.clear_reaction('⏸️')
-                await self.player_ctx.message.clear_reaction('▶️')
-                await self.player_ctx.message.clear_reaction('⏹️')
-            except Exception as e:
-                print(repr(e))
+            # remove control reactions
+            await ctx.message.clear_reaction('⏸️')
+            await ctx.message.clear_reaction('▶️')
+            await ctx.message.clear_reaction('⏹️')
+            await ctx.message.add_reaction('✅')
+
+            # clear variable
+            self.playerMsgId = None
 
     @commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload):
-        comm = {
-            '▶️' : self._play,
+    async def on_reaction_add(self, reaction, user):
+        control_table = {
+            '▶️' : self._resume,
             '⏸️': self._pause,
             '⏹️': self._stop
         }
 
-        if payload.message_id == self.player_ctx.message.id:
-            await self.player_ctx.invoke(comm[payload.emoji.name])
+        if (reaction.message.id == self.playerMsgId) and not user.bot:
+            try:
+                action = control_table[reaction.emoji] # get command
+            except KeyError: # if there is no matched command
+                return
+            else:
+                ctx = await self.bot.get_context(reaction.message) # get context
+                ctx.voice_state = self.get_voice_state(ctx)
+                await ctx.invoke(action)
